@@ -1,0 +1,150 @@
+/* Receipt Print Styles */
+@media print {
+    @page {
+        margin: 0;
+        size: 80mm 297mm;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        font-size: 12px;
+        line-height: 1.2;
+    }
+
+    .receipt-container {
+        width: 80mm;
+        max-width: 80mm;
+        margin: 0;
+        padding: 5mm;
+    }
+
+    .no-print {
+        display: none !important;
+    }
+
+    .modal-backdrop {
+        display: none !important;
+    }
+
+    .modal {
+        position: static !important;
+        display: block !important;
+        width: auto !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    .modal-dialog {
+        margin: 0 !important;
+        max-width: none !important;
+    }
+
+    .modal-content {
+        border: none !important;
+        box-shadow: none !important;
+    }
+
+    /* Print-mode helpers */
+    body.print-mode {
+        margin: 0;
+        padding: 0;
+    }
+
+    .print-mode .receipt {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        padding: 20px;
+    }
+
+    .print-mode .no-print {
+        display: none !important;
+    }
+}
+
+.receipt {
+    font-family: 'Courier New', monospace;
+}
+
+.receipt-header {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.receipt-header h3 {
+    font-size: 16px;
+    font-weight: bold;
+    margin: 0;
+}
+
+.receipt-info {
+    margin-bottom: 10px;
+}
+
+.receipt-info p {
+    margin: 2px 0;
+    font-size: 11px;
+}
+
+.receipt-items {
+    margin: 10px 0;
+    border-top: 1px dashed #000;
+    border-bottom: 1px dashed #000;
+    padding: 10px 0;
+}
+
+.receipt-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+}
+
+.receipt-item-name {
+    font-weight: bold;
+    font-size: 11px;
+}
+
+.receipt-item-quantity {
+    font-size: 9px;
+    color: #666;
+}
+
+.receipt-item-price {
+    text-align: right;
+    font-size: 11px;
+}
+
+.receipt-total {
+    text-align: right;
+    font-weight: bold;
+    font-size: 14px;
+    margin: 10px 0;
+}
+
+.receipt-footer {
+    text-align: center;
+    border-top: 1px dashed #000;
+    padding-top: 10px;
+    margin-top: 10px;
+}
+
+.receipt-footer p {
+    margin: 2px 0;
+    font-size: 9px;
+}
+
+.receipt-barcode {
+    text-align: center;
+    font-family: monospace;
+    font-size: 14px;
+    margin: 10px 0;
+    letter-spacing: 2px;
+}
+
+.receipt-thank-you {
+    text-align: center;
+    font-weight: bold;
+    margin-top: 10px;
+    font-size: 12px;
+}
