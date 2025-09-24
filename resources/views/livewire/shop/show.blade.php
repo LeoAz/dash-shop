@@ -567,6 +567,7 @@ $s_save = function () {
                             <flux:table.column>Nom</flux:table.column>
                             <flux:table.column>SKU</flux:table.column>
                             <flux:table.column>Prix</flux:table.column>
+                            <flux:table.column>Type</flux:table.column>
                             <flux:table.column>Disponible</flux:table.column>
                             <flux:table.column></flux:table.column>
                         </flux:table.columns>
@@ -576,6 +577,7 @@ $s_save = function () {
                                     <flux:table.cell>{{ $product->name }}</flux:table.cell>
                                     <flux:table.cell>{{ $product->sku }}</flux:table.cell>
                                     <flux:table.cell>{{ number_format($product->price, 2) }}</flux:table.cell>
+                                    <flux:table.cell>{{ $product->type === 'item' ? 'Item' : 'Service' }}</flux:table.cell>
                                     <flux:table.cell>{{ $product->quantity ?? 0 }}</flux:table.cell>
                                     <flux:table.cell>
                                         @role('admin')
@@ -1038,7 +1040,7 @@ $s_save = function () {
     <!-- Sale Modal -->
     <flux:modal wire:model="s_showModal">
         <form wire:submit.prevent="s_save">
-            <h3>New Sale</h3>
+            <h3>Nouvelle vente</h3>
             <div class="space-y-4">
                 <div>
                     <flux:label>Boutique</flux:label>
@@ -1087,7 +1089,7 @@ $s_save = function () {
                                 @php $sel = $s_availableProducts->find($product['product_id'] ?? null); @endphp
                                 <flux:input wire:model="s_products.{{ $index }}.quantity" type="number" min="1" wire:change="s_updateProduct({{ $index }})" @if($sel && $sel->type === 'service') readonly @endif required />
                                 @if($sel && $sel->type === 'service')
-                                    <small class="text-gray-500">Quantité ignorée pour les services</small>
+                                    <small class="text-gray-500">-</small>
                                 @endif
                             </div>
                             <div class="col-span-3">

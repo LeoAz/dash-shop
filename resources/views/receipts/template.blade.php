@@ -159,7 +159,7 @@
             <div class="receipt-item">
                 <div class="receipt-item-details">
                     <div class="receipt-item-name">{{ $item['name'] }}</div>
-                    <div class="receipt-item-quantity">{{ $item['quantity'] }} x ${{ number_format($item['unit_price'], 2) }}</div>
+                    <div class="receipt-item-quantity">{{ $item['quantity'] }} x {{ number_format($item['unit_price'], 2) }}</div>
                 </div>
                 <div class="receipt-item-price">{{ number_format($item['subtotal'], 2) }}</div>
             </div>

@@ -113,6 +113,7 @@ $delete = function (Product $product) {
         <flux:table.columns>
             <flux:table.column>Nom</flux:table.column>
             <flux:table.column>Quantité</flux:table.column>
+            <flux:table.column>Type</flux:table.column>
             <flux:table.column>Boutique</flux:table.column>
             <flux:table.column>Prix</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
@@ -123,6 +124,7 @@ $delete = function (Product $product) {
                     <flux:table.row wire:key="{{ $product->id }}">
                         <flux:table.cell>{{ $product->name }}</flux:table.cell>
                         <flux:table.cell>{{ $product->quantity }}</flux:table.cell>
+                        <flux:table.cell>{{ $product->type === 'item' ? 'Item' : 'Service' }}</flux:table.cell>
                         <flux:table.cell>{{ $product->shop->name }}</flux:table.cell>
                         <flux:table.cell>${{ number_format($product->price, 2) }}</flux:table.cell>
                         <flux:table.cell>

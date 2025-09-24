@@ -169,7 +169,7 @@
     </div>
 
     <div class="receipt-total">
-        {{ __('TOTAL :') }} ${{ number_format($sale->total_amount, 2) }}
+        {{ __('TOTAL :') }} {{ number_format($sale->total_amount, 2) }}
     </div>
 
     <div class="receipt-barcode">
