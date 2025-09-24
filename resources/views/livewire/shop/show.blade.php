@@ -53,6 +53,10 @@ state(['s_showAssignModal' => false]);
 state(['s_selectedSale' => null]);
 state(['s_assignments' => []]);
 
+// Delete sale confirmation state
+state(['s_showDeleteSaleModal' => false]);
+state(['s_deleteSaleId' => null]);
+
 // Receipt state - SIMPLIFIED for controller approach
 state(['receiptLoading' => false]);
 
@@ -142,6 +146,8 @@ $salesStats = computed(function () {
     $totalSales = (clone $baseQuery)->count();
     // Tickets: sales that have an associated receipt
     $tickets = (clone $baseQuery)->whereHas('receipt')->count();
+    // Total amount sold for the day
+    $totalAmount = (clone $baseQuery)->sum('total_amount');
 
     $perHairdresser = (clone $baseQuery)
         ->selectRaw('hairdresser_id, COUNT(*) as sales_count, SUM(total_amount) as total_amount')
@@ -155,6 +161,7 @@ $salesStats = computed(function () {
     return [
         'totalSales' => $totalSales,
         'tickets' => $tickets,
+        'totalAmount' => $totalAmount,
         'perHairdresser' => $perHairdresser,
     ];
 });
@@ -501,6 +508,47 @@ $s_save = function () {
     return $this->redirect(route('receipts.auto-print', $sale), navigate: false);
 };
 
+// Confirm delete sale (admin only)
+$s_confirmDeleteSale = function (Sale $sale) {
+    if (! auth()->user()->hasRole('admin')) return;
+    $this->s_deleteSaleId = $sale->id;
+    $this->s_showDeleteSaleModal = true;
+};
+
+// Delete sale and restock items (admin only)
+$s_deleteSale = function () {
+    if (! auth()->user()->hasRole('admin')) return;
+    if (! $this->s_deleteSaleId) {
+        $this->s_showDeleteSaleModal = false;
+        return;
+    }
+
+    $sale = Sale::with('products')->find($this->s_deleteSaleId);
+    if (! $sale) {
+        $this->s_showDeleteSaleModal = false;
+        $this->s_deleteSaleId = null;
+        return;
+    }
+
+    DB::transaction(function () use ($sale) {
+        // Restock items only
+        foreach ($sale->products as $product) {
+            if (($product->type ?? 'service') === 'item') {
+                $qty = (int) ($product->pivot->quantity ?? 0);
+                if ($qty > 0) {
+                    Product::where('id', $product->id)->increment('quantity', $qty);
+                }
+            }
+        }
+        // Deleting the sale will cascade delete product_sales and receipt due to FK constraints
+        $sale->delete();
+    });
+
+    $this->s_showDeleteSaleModal = false;
+    $this->s_deleteSaleId = null;
+    session()->flash('message', 'Vente supprimée et stock rétabli.');
+};
+
 ?>
 
 <div>
@@ -562,6 +610,7 @@ $s_save = function () {
                         @endrole
                     </div>
 
+                    <div class="overflow-x-auto">
                     <flux:table>
                         <flux:table.columns>
                             <flux:table.column>Nom</flux:table.column>
@@ -589,6 +638,7 @@ $s_save = function () {
                             @endforeach
                         </flux:table.rows>
                     </flux:table>
+                    </div>
 
                     <div class="mt-2">
                         {{ $this->products->links() }}
@@ -603,6 +653,7 @@ $s_save = function () {
                         @endrole
                     </div>
 
+                    <div class="overflow-x-auto">
                     <flux:table>
                         <flux:table.columns>
                             <flux:table.column>Nom</flux:table.column>
@@ -626,6 +677,7 @@ $s_save = function () {
                             @endforeach
                         </flux:table.rows>
                     </flux:table>
+                    </div>
 
                     <div class="mt-2">
                         {{ $this->hairdressers->links() }}
@@ -651,10 +703,14 @@ $s_save = function () {
                             <div class="text-2xl font-semibold">{{ $this->salesStats['totalSales'] ?? 0 }}</div>
                         </div>
                         <div class="p-3 rounded border bg-white">
+                            <div class="text-xs text-gray-500">Montant total du jour</div>
+                            <div class="text-2xl font-semibold">{{ number_format($this->salesStats['totalAmount'] ?? 0, 2) }}</div>
+                        </div>
+                        <div class="p-3 rounded border bg-white">
                             <div class="text-xs text-gray-500">Tickets</div>
                             <div class="text-2xl font-semibold">{{ $this->salesStats['tickets'] ?? 0 }}</div>
                         </div>
-                        <div class="p-3 rounded border bg-white">
+                        <div class="p-3 rounded border bg-white md:col-span-3">
                             <div class="text-xs text-gray-500">Ventes par coiffeur</div>
                             <div class="text-sm mt-1 space-y-1">
                                 @forelse(($this->salesStats['perHairdresser'] ?? []) as $row)
@@ -669,6 +725,7 @@ $s_save = function () {
                         </div>
                     </div>
 
+                    <div class="overflow-x-auto">
                     <flux:table>
                         <flux:table.columns>
                             <flux:table.column>Date</flux:table.column>
@@ -722,6 +779,9 @@ $s_save = function () {
                                                 Imprimer
                                             </a>
                                             <a class="text-sm underline" href="{{ route('sales') }}">Voir</a>
+                                            @role('admin')
+                                                <flux:button size="sm" variant="danger" wire:click="s_confirmDeleteSale({{ $sale->id }})">Supprimer</flux:button>
+                                            @endrole
                                         </div>
                                     </flux:table.cell>
                                 </flux:table.row>
@@ -732,6 +792,7 @@ $s_save = function () {
                             @endforelse
                         </flux:table.rows>
                     </flux:table>
+                    </div>
 
                     <div class="mt-2">
                         {{ $this->sales->links() }}
@@ -756,6 +817,7 @@ $s_save = function () {
                         <div class="flex items-center justify-between mb-2">
                             <h2 class="text-xl font-semibold">Rapport des ventes</h2>
                         </div>
+                        <div class="overflow-x-auto">
                         <flux:table>
                             <flux:table.columns>
                                 <flux:table.column>{{ __('Date') }}</flux:table.column>
@@ -780,12 +842,14 @@ $s_save = function () {
                                 @endforelse
                             </flux:table.rows>
                         </flux:table>
+                        </div>
                     </div>
 
                     <div>
                         <div class="flex items-center justify-between mb-2">
                             <h2 class="text-xl font-semibold">{{ __('Rapports sur les coiffeurs') }}</h2>
                         </div>
+                        <div class="overflow-x-auto">
                         <flux:table>
                             <flux:table.columns>
                                 <flux:table.column>{{ __('Coiffeurs') }}</flux:table.column>
@@ -806,12 +870,14 @@ $s_save = function () {
                                 @endforelse
                             </flux:table.rows>
                         </flux:table>
+                        </div>
                     </div>
 
                     <div>
                         <div class="flex items-center justify-between mb-2">
                             <h2 class="text-xl font-semibold">{{ __('Rapports sur les produits') }}</h2>
                         </div>
+                        <div class="overflow-x-auto">
                         <flux:table>
                             <flux:table.columns>
                                 <flux:table.column>{{ __('Product') }}</flux:table.column>
@@ -834,6 +900,7 @@ $s_save = function () {
                                 @endforelse
                             </flux:table.rows>
                         </flux:table>
+                        </div>
                     </div>
                 </div>
             @elseif($tab === 'promotions')
@@ -845,6 +912,7 @@ $s_save = function () {
                         @endrole
                     </div>
 
+                    <div class="overflow-x-auto">
                     <flux:table>
                         <flux:table.columns>
                             <flux:table.column>Nom</flux:table.column>
@@ -899,6 +967,7 @@ $s_save = function () {
                             @endforelse
                         </flux:table.rows>
                     </flux:table>
+                    </div>
                 </div>
             @endif
         </div>
@@ -1076,8 +1145,8 @@ $s_save = function () {
                         <flux:button type="button" size="sm" wire:click="s_addProduct">Ajouter produits</flux:button>
                     </div>
                     @foreach($s_products as $index => $product)
-                        <div class="grid grid-cols-12 gap-2 mb-2">
-                            <div class="col-span-5">
+                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-2">
+                            <div class="col-span-12 sm:col-span-5">
                                 <flux:select wire:model="s_products.{{ $index }}.product_id" wire:change="s_updateProduct({{ $index }})" required>
                                     <option value="">Select Product</option>
                                     @foreach($s_availableProducts as $availableProduct)
@@ -1085,17 +1154,17 @@ $s_save = function () {
                                     @endforeach
                                 </flux:select>
                             </div>
-                            <div class="col-span-2">
+                            <div class="col-span-12 sm:col-span-2">
                                 @php $sel = $s_availableProducts->find($product['product_id'] ?? null); @endphp
                                 <flux:input wire:model="s_products.{{ $index }}.quantity" type="number" min="1" wire:change="s_updateProduct({{ $index }})" @if($sel && $sel->type === 'service') readonly @endif required />
                                 @if($sel && $sel->type === 'service')
                                     <small class="text-gray-500">-</small>
                                 @endif
                             </div>
-                            <div class="col-span-3">
+                            <div class="col-span-12 sm:col-span-3">
                                 <flux:input wire:model="s_products.{{ $index }}.unit_price" type="number" step="0.01" readonly />
                             </div>
-                            <div class="col-span-2">
+                            <div class="col-span-12 sm:col-span-2 flex sm:justify-end">
                                 <flux:button type="button" size="sm" wire:click="s_removeProduct({{ $index }})">Supprimer</flux:button>
                             </div>
                         </div>
@@ -1141,6 +1210,18 @@ $s_save = function () {
             <div class="flex justify-end gap-2">
                 <flux:button type="button" variant="filled" wire:click="$set('p_showDeleteModal', false)">Annuler</flux:button>
                 <flux:button type="button" variant="danger" wire:click="p_delete({{ $p_deleteId }})">Supprimer</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+
+    <!-- Sale Delete Confirmation Modal -->
+    <flux:modal wire:model="s_showDeleteSaleModal">
+        <div class="space-y-4">
+            <h3>Supprimer la vente</h3>
+            <p>Êtes-vous sûr de vouloir supprimer cette vente ? Les quantités des produits de type "Item" seront automatiquement rétablies en stock. Cette action est irréversible.</p>
+            <div class="flex justify-end gap-2">
+                <flux:button type="button" variant="filled" wire:click="$set('s_showDeleteSaleModal', false)">Annuler</flux:button>
+                <flux:button type="button" variant="danger" wire:click="s_deleteSale">Supprimer</flux:button>
             </div>
         </div>
     </flux:modal>
