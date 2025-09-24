@@ -12,7 +12,7 @@
             </a>
 
             <flux:navbar class="-mb-px max-lg:hidden">
-                @role('vendeur')
+                @role('admin|vendeur')
                 <flux:navbar.item icon="building-storefront" :href="route('shops')" :current="request()->routeIs('shops') || request()->routeIs('shops.*')" wire:navigate>
                     {{ __('Boutiques') }}
                 </flux:navbar.item>
