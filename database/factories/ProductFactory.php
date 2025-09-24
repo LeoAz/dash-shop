@@ -16,12 +16,14 @@ class ProductFactory extends Factory
      */
     public function definition(): array
     {
+        $isItem = $this->faker->boolean(50);
         return [
             'shop_id' => null,
             'name' => $this->faker->words(3, true),
             'description' => $this->faker->sentence(),
             'price' => $this->faker->randomFloat(2, 1, 200),
-            'quantity' => $this->faker->numberBetween(0, 100),
+            'quantity' => $isItem ? $this->faker->numberBetween(0, 100) : 0,
+            'type' => $isItem ? 'item' : 'service',
             'sku' => strtoupper($this->faker->bothify('SKU-####-??')),
         ];
     }

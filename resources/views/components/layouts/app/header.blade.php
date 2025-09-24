@@ -129,6 +129,35 @@
 
         {{ $slot }}
 
+        <ui-toast id="app-toast" position="top end" popover>
+            <template>
+                <div data-flux-toast-dialog class="rounded-lg bg-white shadow-lg ring-1 ring-zinc-200 dark:bg-zinc-800 dark:ring-zinc-700 p-4">
+                    <div class="text-sm font-semibold mb-1"><slot name="title">Notification</slot></div>
+                    <div class="text-sm text-zinc-600 dark:text-zinc-300"><slot name="description"></slot></div>
+                </div>
+            </template>
+        </ui-toast>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                const toastEl = document.getElementById('app-toast');
+                function showToast({ title = '', description = '', variant = 'info', duration = 5000 } = {}) {
+                    if (!toastEl || typeof toastEl.showToast !== 'function') return;
+                    toastEl.showToast({
+                        slots: { title, description },
+                        dataset: { variant },
+                        duration: duration,
+                    });
+                }
+                // Listen to Livewire dispatched events (bubble to window)
+                window.addEventListener('toast', (e) => showToast(e.detail || {}));
+                // Fallback for Livewire helper if available
+                if (window.Livewire && typeof Livewire.on === 'function') {
+                    Livewire.on('toast', (payload) => showToast(payload || {}));
+                }
+            });
+        </script>
+
         @fluxScripts
     </body>
 </html>

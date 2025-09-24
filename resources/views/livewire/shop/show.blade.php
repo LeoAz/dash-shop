@@ -28,7 +28,7 @@ state(['r_from' => null, 'r_to' => null]);
 // Product state
 state(['p_showModal' => false]);
 state(['p_editing' => null]);
-state(['p_name' => '', 'p_description' => '', 'p_price' => '', 'p_sku' => '', 'p_quantity' => 0]);
+state(['p_name' => '', 'p_description' => '', 'p_price' => '', 'p_sku' => '', 'p_quantity' => 0, 'p_type' => 'service']);
 // Product deletion confirmation state
 state(['p_showDeleteModal' => false]);
 state(['p_deleteId' => null]);
@@ -211,8 +211,9 @@ mount(function (Shop $shop) {
 // Product actions
 $p_create = function () {
     if (! auth()->user()->hasRole('admin')) return;
-    $this->reset(['p_name','p_description','p_price','p_sku','p_quantity','p_editing']);
+    $this->reset(['p_name','p_description','p_price','p_sku','p_quantity','p_editing','p_type']);
     $this->p_quantity = 0;
+    $this->p_type = 'service';
     $this->p_showModal = true;
 };
 
@@ -224,6 +225,7 @@ $p_edit = function (Product $product) {
     $this->p_price = $product->price;
     $this->p_sku = $product->sku;
     $this->p_quantity = $product->quantity ?? 0;
+    $this->p_type = $product->type ?? 'service';
     $this->p_showModal = true;
 };
 
@@ -247,14 +249,19 @@ $p_save = function () {
         'p_description' => 'nullable|string',
         'p_price' => 'required|numeric|min:0',
         'p_sku' => 'required|string|max:50|unique:products,sku' . ($this->p_editing ? ',' . $this->p_editing->id : ''),
-        'p_quantity' => 'required|integer|min:0',
+        'p_type' => 'required|in:service,item',
+        'p_quantity' => ($this->p_type === 'item') ? 'required|integer|min:0' : 'nullable|integer|min:0',
     ], [], [
         'p_name' => 'name',
         'p_description' => 'description',
         'p_price' => 'price',
         'p_sku' => 'sku',
+        'p_type' => 'type',
         'p_quantity' => 'quantity',
     ]);
+
+    // Normalize quantity for services
+    $qty = ($this->p_type === 'item') ? ($this->p_quantity ?? 0) : 0;
 
     if ($this->p_editing) {
         $this->p_editing->update([
@@ -262,7 +269,8 @@ $p_save = function () {
             'description' => $this->p_description,
             'price' => $this->p_price,
             'sku' => $this->p_sku,
-            'quantity' => $this->p_quantity,
+            'type' => $this->p_type,
+            'quantity' => $qty,
         ]);
     } else {
         Product::create([
@@ -271,12 +279,13 @@ $p_save = function () {
             'description' => $this->p_description,
             'price' => $this->p_price,
             'sku' => $this->p_sku,
-            'quantity' => $this->p_quantity,
+            'type' => $this->p_type,
+            'quantity' => $qty,
         ]);
     }
 
     $this->p_showModal = false;
-    $this->reset(['p_name','p_description','p_price','p_sku','p_quantity','p_editing']);
+    $this->reset(['p_name','p_description','p_price','p_sku','p_quantity','p_editing','p_type']);
     session()->flash('message', 'Produit enregistré avec succès !');
 };
 
@@ -389,7 +398,10 @@ $s_updateProduct = function ($index) {
     $product = $this->s_availableProducts->find($this->s_products[$index]['product_id']);
     if ($product) {
         $this->s_products[$index]['unit_price'] = $product->price;
-        $this->s_products[$index]['subtotal'] = $product->price * $this->s_products[$index]['quantity'];
+        $qty = ($product->type === 'service') ? 1 : (int)($this->s_products[$index]['quantity'] ?? 1);
+        // Force quantity to 1 for services
+        $this->s_products[$index]['quantity'] = $qty;
+        $this->s_products[$index]['subtotal'] = $product->price * ($product->type === 'service' ? 1 : $qty);
         $this->s_calculateTotal();
     }
 };
@@ -437,12 +449,14 @@ $s_save = function () {
         's_products' => 'products',
     ]);
 
-    // Check stock availability before creating the sale
+    // Check stock availability before creating the sale (items only)
     foreach ($this->s_products as $item) {
         $p = Product::find($item['product_id']);
-        if ($p && $p->quantity < $item['quantity']) {
-            $this->addError('s_products', 'Stock insuffisant pour le produit : ' . $p->name);
-            return;
+        if ($p && ($p->type === 'item')) {
+            if ($p->quantity < ($item['quantity'] ?? 1)) {
+                $this->addError('s_products', 'Stock insuffisant pour le produit : ' . $p->name);
+                return;
+            }
         }
     }
 
@@ -463,14 +477,20 @@ $s_save = function () {
 
     foreach ($this->s_products as $product) {
         if ($product['product_id']) {
+            $pModel = Product::find($product['product_id']);
+            $isService = $pModel && $pModel->type === 'service';
+            $qtyToSave = $isService ? 1 : ($product['quantity'] ?? 1);
+
             $sale->products()->attach($product['product_id'], [
-                'quantity' => $product['quantity'],
+                'quantity' => $qtyToSave,
                 'unit_price' => $product['unit_price'],
-                'subtotal' => $product['subtotal'],
+                'subtotal' => $isService ? $product['unit_price'] : $product['subtotal'],
             ]);
 
-            // Decrease product quantity directly
-            Product::where('id', $product['product_id'])->decrement('quantity', $product['quantity']);
+            // Decrease product quantity directly for items only
+            if ($pModel && $pModel->type === 'item') {
+                Product::where('id', $product['product_id'])->decrement('quantity', $qtyToSave);
+            }
         }
     }
 
@@ -904,15 +924,24 @@ $s_save = function () {
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
+                        <flux:label>Type</flux:label>
+                        <flux:select wire:model="p_type">
+                            <option value="service">Service</option>
+                            <option value="item">Item</option>
+                        </flux:select>
+                        @error('p_type') <flux:error>{{ $message }}</flux:error> @enderror
+                    </div>
+                    <div>
                         <flux:label>{{ __('SKU') }}</flux:label>
                         <flux:input wire:model="p_sku" placeholder="{{ __('Auto-generated if empty') }}" />
                         @error('p_sku') <flux:error>{{ $message }}</flux:error> @enderror
                     </div>
-                    <div>
-                        <flux:label>{{ __('Quantité') }}</flux:label>
-                        <flux:input wire:model="p_quantity" type="number" min="0" required />
-                        @error('p_quantity') <flux:error>{{ $message }}</flux:error> @enderror
-                    </div>
+                </div>
+                <div>
+                    <flux:label>{{ __('Quantité') }}</flux:label>
+                    <flux:input wire:model="p_quantity" type="number" min="0" @if($p_type === 'service') disabled @endif />
+                    <small class="text-gray-500">@if($p_type === 'service') La quantité est ignorée pour les services. @else Entrez le stock disponible. @endif</small>
+                    @error('p_quantity') <flux:error>{{ $message }}</flux:error> @enderror
                 </div>
             </div>
             <flux:button type="button" variant="ghost" wire:click="$set('p_showModal', false)">{{ __('Annulé') }}</flux:button>
@@ -1055,7 +1084,11 @@ $s_save = function () {
                                 </flux:select>
                             </div>
                             <div class="col-span-2">
-                                <flux:input wire:model="s_products.{{ $index }}.quantity" type="number" min="1" wire:change="s_updateProduct({{ $index }})" required />
+                                @php $sel = $s_availableProducts->find($product['product_id'] ?? null); @endphp
+                                <flux:input wire:model="s_products.{{ $index }}.quantity" type="number" min="1" wire:change="s_updateProduct({{ $index }})" @if($sel && $sel->type === 'service') readonly @endif required />
+                                @if($sel && $sel->type === 'service')
+                                    <small class="text-gray-500">Quantité ignorée pour les services</small>
+                                @endif
                             </div>
                             <div class="col-span-3">
                                 <flux:input wire:model="s_products.{{ $index }}.unit_price" type="number" step="0.01" readonly />

@@ -13,13 +13,13 @@ title('Liste des produits');
 
 state(['showModal' => false]);
 state(['editingProduct' => null]);
-state(['shop_id' => '', 'name' => '', 'description' => '', 'price' => '', 'sku' => '']);
+state(['shop_id' => '', 'name' => '', 'description' => '', 'price' => '', 'quantity' => '']);
 
 $products = computed(fn () => Product::with('shop')->paginate(10));
 $selectedBoutique = state('selectedBoutique');
 
 $create = function () {
-    $this->reset(['shop_id', 'name', 'description', 'price', 'sku', 'editingProduct']);
+    $this->reset(['shop_id', 'name', 'description', 'price', 'quantity', 'editingProduct']);
     if ($this->selectedBoutique) {
         $this->shop_id = $this->selectedBoutique;
     }
@@ -32,39 +32,67 @@ $edit = function (Product $product) {
     $this->name = $product->name;
     $this->description = $product->description;
     $this->price = $product->price;
-    $this->sku = $product->sku;
+    $this->quantity = $product->quantity;
     $this->showModal = true;
 };
 
 $save = function () {
-    $this->validate([
-        'shop_id' => 'required|exists:shops,id',
-        'name' => 'required|string|max:255',
-        'description' => 'nullable|string',
-        'price' => 'required|numeric|min:0',
-        'sku' => 'required|string|max:50|unique:products,sku' . ($this->editingProduct ? ',' . $this->editingProduct->id : ''),
-    ]);
+    try {
+        $validated = $this->validate([
+            'shop_id' => 'required|exists:shops,id',
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'price' => 'required|numeric|min:0',
+            'quantity' => 'required|integer|min:0',
+        ]);
 
-    if ($this->editingProduct) {
-        $this->editingProduct->update([
-            'shop_id' => $this->shop_id,
-            'name' => $this->name,
-            'description' => $this->description,
-            'price' => $this->price,
-            'sku' => $this->sku,
-        ]);
-    } else {
-        Product::query()->create([
-            'shop_id' => $this->shop_id,
-            'name' => $this->name,
-            'description' => $this->description,
-            'price' => $this->price,
-            'sku' => $this->sku,
-        ]);
+        if ($this->editingProduct) {
+            $this->editingProduct->update([
+                'shop_id' => $this->shop_id,
+                'name' => $this->name,
+                'description' => $this->description,
+                'price' => $this->price,
+                'quantity' => $this->quantity,
+            ]);
+            $this->dispatch('toast',
+                title: 'Produit mis à jour',
+                description: 'Le produit a été enregistré avec succès.',
+                variant: 'success'
+            );
+        } else {
+            Product::query()->create([
+                'shop_id' => $this->shop_id,
+                'name' => $this->name,
+                'description' => $this->description,
+                'price' => $this->price,
+                'quantity' => $this->quantity,
+            ]);
+            $this->dispatch('toast',
+                title: 'Produit créé',
+                description: 'Le produit a été créé avec succès.',
+                variant: 'success'
+            );
+        }
+
+        $this->showModal = false;
+        $this->reset(['shop_id', 'name', 'description', 'price', 'quantity', 'editingProduct']);
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        // Flatten validation errors and show first message in a toast
+        $message = collect($e->validator->errors()->all())->first() ?? "Erreur de validation";
+        $this->dispatch('toast',
+            title: 'Erreur de formulaire',
+            description: $message,
+            variant: 'error'
+        );
+        throw $e; // keep default error bag for inline display if needed
+    } catch (\Throwable $e) {
+        $this->dispatch('toast',
+            title: 'Erreur',
+            description: 'Une erreur est survenue. Veuillez réessayer.',
+            variant: 'error'
+        );
+        report($e);
     }
-
-    $this->showModal = false;
-    $this->reset(['shop_id', 'name', 'description', 'price', 'sku', 'editingProduct']);
 };
 
 $delete = function (Product $product) {
@@ -84,7 +112,7 @@ $delete = function (Product $product) {
     <flux:table>
         <flux:table.columns>
             <flux:table.column>Nom</flux:table.column>
-            <flux:table.column>SKU</flux:table.column>
+            <flux:table.column>Quantité</flux:table.column>
             <flux:table.column>Boutique</flux:table.column>
             <flux:table.column>Prix</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
@@ -94,7 +122,7 @@ $delete = function (Product $product) {
                 @if(!$selectedBoutique || $product->shop_id == $selectedBoutique)
                     <flux:table.row wire:key="{{ $product->id }}">
                         <flux:table.cell>{{ $product->name }}</flux:table.cell>
-                        <flux:table.cell>{{ $product->sku }}</flux:table.cell>
+                        <flux:table.cell>{{ $product->quantity }}</flux:table.cell>
                         <flux:table.cell>{{ $product->shop->name }}</flux:table.cell>
                         <flux:table.cell>${{ number_format($product->price, 2) }}</flux:table.cell>
                         <flux:table.cell>
@@ -149,9 +177,9 @@ $delete = function (Product $product) {
                     </div>
 
                     <div>
-                        <flux:label>SKU</flux:label>
-                        <flux:input wire:model="sku" required />
-                        @error('sku') <flux:error>{{ $message }}</flux:error> @enderror
+                        <flux:label>Quantité</flux:label>
+                        <flux:input wire:model="quantity" type="number" inputmode="numeric" min="0" step="1" required />
+                        @error('quantity') <flux:error>{{ $message }}</flux:error> @enderror
                     </div>
                 </div>
                 <flux:button type="button" variant="ghost" wire:click="$set('showModal', false)">Annuler</flux:button>
