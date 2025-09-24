@@ -727,13 +727,12 @@ $s_save = function () {
                             <flux:input type="date" wire:model.live="r_to" />
                         </div>
                         <div class="ml-auto text-sm text-gray-500">
-                            Les filtres s’appliquent aux aperçus et aux exports
+                            Les filtres s’appliquent aux aperçus
                         </div>
                     </div>
                     <div>
                         <div class="flex items-center justify-between mb-2">
                             <h2 class="text-xl font-semibold">Rapport des ventes</h2>
-                            <a class="text-sm underline" href="{{ route('reports.sales', $shop) }}?from={{ $this->r_from }}&to={{ $this->r_to }}" target="_blank">Exporter vers Excel</a>
                         </div>
                         <flux:table>
                             <flux:table.columns>
@@ -764,7 +763,6 @@ $s_save = function () {
                     <div>
                         <div class="flex items-center justify-between mb-2">
                             <h2 class="text-xl font-semibold">{{ __('Rapports sur les coiffeurs') }}</h2>
-                            <a class="text-sm underline" href="{{ route('reports.hairdressers', $shop) }}?from={{ $this->r_from }}&to={{ $this->r_to }}" target="_blank">{{ __('Exporter en  Excel') }}</a>
                         </div>
                         <flux:table>
                             <flux:table.columns>
@@ -791,7 +789,6 @@ $s_save = function () {
                     <div>
                         <div class="flex items-center justify-between mb-2">
                             <h2 class="text-xl font-semibold">{{ __('Rapports sur les produits') }}</h2>
-                            <a class="text-sm underline" href="{{ route('reports.products', $shop) }}?from={{ $this->r_from }}&to={{ $this->r_to }}" target="_blank">{{ __('Export to Excel') }}</a>
                         </div>
                         <flux:table>
                             <flux:table.columns>
