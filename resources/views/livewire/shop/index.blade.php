@@ -8,7 +8,7 @@ use function Livewire\Volt\mount;
 use App\Models\Shop;
 
 layout('components.layouts.app');
-title('Liste des boutiques / Salon de coiffure');
+title('Liste des boutiques');
 
 state(['showModal' => false]);
 state(['editingBoutique' => null]);
@@ -85,42 +85,40 @@ $delete = function (Shop $shop) {
 
 <div>
     <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold">Liste des boutiques / Salon de coiffure</h1>
+        <h1 class="text-2xl font-bold">Liste des boutiques</h1>
             @role('admin')
             <flux:button wire:click="create">Ajouter une Boutique</flux:button>
             @endrole
     </div>
 
-    <flux:table>
-        <flux:table.columns>
-            <flux:table.column>Nom</flux:table.column>
-            <flux:table.column>Adresse</flux:table.column>
-            <flux:table.column>Téléphone</flux:table.column>
-            <flux:table.column>E-mail</flux:table.column>
-            <flux:table.column>Actions</flux:table.column>
-        </flux:table.columns>
-        <flux:table.rows>
-            @foreach($this->shops as $shop)
-                <flux:table.row wire:key="{{ $shop->id }}">
-                    <flux:table.cell>{{ $shop->name }}</flux:table.cell>
-                    <flux:table.cell>{{ $shop->address ?? 'N/D' }}</flux:table.cell>
-                    <flux:table.cell>{{ $shop->phone ?? 'N/D' }}</flux:table.cell>
-                    <flux:table.cell>{{ $shop->email ?? 'N/D' }}</flux:table.cell>
-                    <flux:table.cell>
-                        <flux:link :href="route('shops.show', $shop)" wire:navigate>
-                            <flux:button variant="ghost" size="sm">Details de la boutique</flux:button>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        @foreach($this->shops as $shop)
+            <flux:card class="relative p-4 shadow cursor-pointer hover:ring-1 hover:ring-primary-200 transition" wire:key="{{ $shop->id }}" onclick="window.location.href='{{ route('shops.show', $shop) }}'">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="space-y-1">
+                        <flux:link :href="route('shops.show', $shop)" wire:navigate class="block">
+                            <h3 class="text-lg font-semibold hover:underline">{{ $shop->name }}</h3>
                         </flux:link>
-                        @role('admin')
-                        <flux:button variant="ghost" size="sm" wire:click="edit({{ $shop->id }})">Modifier</flux:button>
-                        @endrole
-                        @if(auth()->user()->hasRole('admin'))
-                            <flux:button variant="ghost" size="sm" wire:click="delete({{ $shop->id }})">Supprimer</flux:button>
-                        @endif
-                    </flux:table.cell>
-                </flux:table.row>
-            @endforeach
-        </flux:table.rows>
-    </flux:table>
+                        <div class="mt-5 space-y-1">
+                            <p class="text-sm text-gray-600">Adresse: <span class="font-medium">{{ $shop->address ?? 'N/D' }}</span></p>
+                            <p class="text-sm text-gray-600">Téléphone: <span class="font-medium">{{ $shop->phone ?? 'N/D' }}</span></p>
+                            <p class="text-sm text-gray-600">E-mail: <span class="font-medium">{{ $shop->email ?? 'N/D' }}</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 flex flex-wrap items-center gap-2">
+                    <flux:link :href="route('shops.show', $shop)" wire:navigate>
+                        <flux:button size="sm">Voir détails</flux:button>
+                    </flux:link>
+                    @role('admin')
+                        <flux:button size="sm" variant="outline" wire:click.stop="edit({{ $shop->id }})">Modifier</flux:button>
+                        <flux:button size="sm" variant="danger" wire:click.stop="delete({{ $shop->id }})">Supprimer</flux:button>
+                    @endrole
+                </div>
+            </flux:card>
+        @endforeach
+    </div>
 
     <div class="mt-4">
         {{ $this->shops->links() }}

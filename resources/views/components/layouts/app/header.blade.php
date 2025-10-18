@@ -22,9 +22,6 @@
                 <flux:navbar.item icon="layout-grid" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                     {{ __('Tableau de bord') }}
                 </flux:navbar.item>
-                <flux:navbar.item icon="tag" :href="route('products')" :current="request()->routeIs('products')" wire:navigate>
-                    {{ __('Produits') }}
-                </flux:navbar.item>
                 <flux:navbar.item icon="banknotes" :href="route('sales')" :current="request()->routeIs('sales')" wire:navigate>
                     {{ __('Ventes') }}
                 </flux:navbar.item>
@@ -156,6 +153,71 @@
                     Livewire.on('toast', (payload) => showToast(payload || {}));
                 }
             });
+        </script>
+
+        <script>
+            // Chart.js loader and dashboard charts initializer (persistent across Livewire navigations)
+            (function () {
+                let chartJsLoading = false;
+                function loadChartJs(callback) {
+                    if (window.Chart) { callback && callback(); return; }
+                    if (chartJsLoading) { document.addEventListener('chartjs:loaded', () => callback && callback(), { once: true }); return; }
+                    chartJsLoading = true;
+                    const s = document.createElement('script');
+                    s.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+                    s.async = true;
+                    s.onload = () => { document.dispatchEvent(new Event('chartjs:loaded')); callback && callback(); };
+                    document.head.appendChild(s);
+                }
+
+                function parseJsonAttr(el, name, fallback) {
+                    try { return JSON.parse(el.getAttribute(name)) ?? fallback; } catch (_) { return fallback; }
+                }
+
+                function initDashboardCharts() {
+                    // Daily Sales Chart
+                    const salesEl = document.getElementById('dailySalesChart');
+                    if (salesEl) {
+                        loadChartJs(() => {
+                            const ctx = salesEl.getContext('2d');
+                            const labels = parseJsonAttr(salesEl, 'data-labels', []);
+                            const values = parseJsonAttr(salesEl, 'data-values', []);
+                            if (window._dailySalesChart) { try { window._dailySalesChart.destroy(); } catch (e) {} }
+                            window._dailySalesChart = new Chart(ctx, {
+                                type: 'bar',
+                                data: { labels, datasets: [{ label: 'Ventes', data: values, backgroundColor: 'rgba(37, 99, 235, 0.7)', borderColor: 'rgba(37, 99, 235, 1)', borderWidth: 1, borderRadius: 4 }] },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    scales: { x: { grid: { display: false, drawBorder: false } }, y: { beginAtZero: true, ticks: { precision: 0 }, grid: { display: false, drawBorder: false } } },
+                                    plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => { const v = ctx.parsed.y; return typeof v === 'number' ? v.toFixed(2) : v; } } } }
+                                }
+                            });
+                        });
+                    }
+
+                    // Inventory Chart
+                    const invEl = document.getElementById('inventoryChart');
+                    if (invEl) {
+                        loadChartJs(() => {
+                            const ctx = invEl.getContext('2d');
+                            const labels = parseJsonAttr(invEl, 'data-labels', ['OK','Faible','Rupture']);
+                            const values = parseJsonAttr(invEl, 'data-values', []);
+                            if (window._inventoryChart) { try { window._inventoryChart.destroy(); } catch (e) {} }
+                            window._inventoryChart = new Chart(ctx, {
+                                type: 'doughnut',
+                                data: { labels, datasets: [{ data: values, backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'], borderWidth: 0 }] },
+                                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '60%' }
+                            });
+                        });
+                    }
+                }
+
+                function tryInit() { initDashboardCharts(); }
+
+                document.addEventListener('DOMContentLoaded', tryInit);
+                window.addEventListener('livewire:navigated', tryInit);
+            })();
         </script>
 
         @fluxScripts

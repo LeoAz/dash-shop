@@ -15,6 +15,7 @@ class Promotion extends Model
         'name',
         'type',
         'percentage',
+        'amount',
         'days_of_week',
         'active',
         'starts_at',
@@ -23,6 +24,7 @@ class Promotion extends Model
 
     protected $casts = [
         'percentage' => 'decimal:2',
+        'amount' => 'decimal:2',
         'days_of_week' => 'array',
         'active' => 'boolean',
         'starts_at' => 'date',

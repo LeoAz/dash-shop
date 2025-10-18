@@ -119,6 +119,30 @@
             margin-top: 10px;
         }
 
+        /* Signatures */
+        .signature-section {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 12px;
+            margin-bottom: 8px;
+        }
+        .signature-box {
+            flex: 1;
+            border-top: 1px dashed #000;
+            padding-top: 8px;
+            text-align: center;
+        }
+        .signature-label {
+            font-size: 10px;
+            color: #333;
+        }
+        .signature-name {
+            font-size: 11px;
+            font-weight: bold;
+            margin-top: 4px;
+        }
+
         .print-actions {
             display: flex;
             justify-content: center;
@@ -171,7 +195,7 @@
     <button class="print-button" onclick="window.print()">
         🖨️ Imprimer le reçu
     </button>
-    <button class="print-button" onclick="window.close()">
+    <button class="print-button" onclick="returnToPrevious()">
         ❌ Fermer
     </button>
 </div>
@@ -196,6 +220,9 @@
         @if($sale->customer_name)
             <p><strong>Client :</strong> {{ $sale->customer_name }}</p>
         @endif
+        @if(!empty($sale->customer_phone))
+            <p><strong>Téléphone :</strong> {{ $sale->customer_phone }}</p>
+        @endif
         @if($sale->hairdresser)
             <p><strong>Coiffeur :</strong> {{ $sale->hairdresser->name }}</p>
         @endif
@@ -213,12 +240,41 @@
         @endforeach
     </div>
 
+    @if(!empty($sale->discount_amount))
+    <div class="receipt-total" style="text-align:right;font-weight:normal;font-size:12px;">
+        Sous-total : {{ number_format($sale->total_amount, 2) }}
+    </div>
+    <div class="receipt-total" style="text-align:right;font-weight:normal;font-size:12px;">
+        @php $pName = optional($sale->promotion)->name; $pPct = (float) (optional($sale->promotion)->percentage ?? 0); @endphp
+        Remise{{ $pName ? ' ('.$pName.($pPct > 0 ? ' '.number_format($pPct, 0).'%' : '').')' : '' }} : -{{ number_format($sale->discount_amount, 2) }}
+    </div>
+    <div class="receipt-total">
+        TOTAL À PAYER : {{ number_format($sale->total_amount - $sale->discount_amount, 2) }}
+    </div>
+    @else
     <div class="receipt-total">
         TOTAL : {{ number_format($sale->total_amount, 2) }}
     </div>
+    @endif
 
     <div class="receipt-barcode">
         {{ $receipt->receipt_number }}
+    </div>
+
+    <!-- Signatures -->
+    <div class="signature-section">
+        <div class="signature-box">
+            <div class="signature-label">Signature Coiffeur</div>
+            @if($sale->hairdresser)
+                <div class="signature-name">{{ $sale->hairdresser->name }}</div>
+            @else
+                <div class="signature-name">&nbsp;</div>
+            @endif
+        </div>
+        <div class="signature-box">
+            <div class="signature-label">Signature Caissier</div>
+            <div class="signature-name">{{ $cashier }}</div>
+        </div>
     </div>
 
     <div class="receipt-footer">
@@ -233,6 +289,24 @@
 </div>
 
 <script>
+    function returnToPrevious() {
+        // Try to return to the previous page (shop details on sales section)
+        if (window.history.length > 1) {
+            window.history.back();
+            return;
+        }
+        if (document.referrer) {
+            window.location.href = document.referrer;
+            return;
+        }
+        @if(isset($shop) && isset($shop->id))
+            window.location.href = "{{ url('/shops/'.$shop->id) }}";
+        @else
+            // Fallback: if nothing else works, try to close the window
+            window.close();
+        @endif
+    }
+
     // Auto-print after 1 second
     setTimeout(function() {
         window.print();

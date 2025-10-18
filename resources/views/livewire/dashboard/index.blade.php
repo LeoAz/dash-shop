@@ -151,63 +151,11 @@ $salesChart = computed(function () {
                 <div class="text-sm text-neutral-500">Total : {{ number_format($this->salesChart['total'], 2) }}</div>
             </div>
             <div class="mt-3" style="height: 200px;">
-                <canvas id="dailySalesChart"></canvas>
+                <canvas id="dailySalesChart"
+                        data-labels='@json(collect($this->dailySales->keys())->map(fn($d) => \Illuminate\Support\Carbon::parse($d)->format('m/d'))->values())'
+                        data-values='@json(array_values($this->dailySales->all()))'>
+                </canvas>
             </div>
-            <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-            <script>
-                (function () {
-                    const el = document.getElementById('dailySalesChart');
-                    if (!el) return;
-                    const ctx = el.getContext('2d');
-
-                    const labels = @json(collect($this->dailySales->keys())->map(fn($d) => \Illuminate\Support\Carbon::parse($d)->format('m/d'))->values());
-                    const data = @json(array_values($this->dailySales->all()));
-
-                    if (window._dailySalesChart) {
-                        try { window._dailySalesChart.destroy(); } catch (e) {}
-                    }
-
-                    window._dailySalesChart = new Chart(ctx, {
-                        type: 'bar',
-                        data: {
-                            labels,
-                            datasets: [{
-                                label: 'Ventes',
-                                data,
-                                backgroundColor: 'rgba(37, 99, 235, 0.7)',
-                                borderColor: 'rgba(37, 99, 235, 1)',
-                                borderWidth: 1,
-                                borderRadius: 4,
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            scales: {
-                                x: {
-                                    grid: { display: false, drawBorder: false }
-                                },
-                                y: {
-                                    beginAtZero: true,
-                                    ticks: { precision: 0 },
-                                    grid: { display: false, drawBorder: false }
-                                }
-                            },
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: {
-                                    callbacks: {
-                                        label: (ctx) => {
-                                            const v = ctx.parsed.y;
-                                            return typeof v === 'number' ? v.toFixed(2) : v;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    });
-                })();
-            </script>
         </div>
         <div class="rounded-xl border border-neutral-200 dark:border-neutral-700 p-4">
             <h3 class="font-semibold mb-3">Meilleurs coiffeurs</h3>
@@ -272,39 +220,11 @@ $salesChart = computed(function () {
                 </div>
             </div>
             <div class="mt-4" style="height: 200px;">
-                <canvas id="inventoryChart"></canvas>
+                <canvas id="inventoryChart"
+                        data-labels='["OK","Faible","Rupture"]'
+                        data-values='@json([$this->inventoryStatus['ok'], $this->inventoryStatus['low'], $this->inventoryStatus['out']])'>
+                </canvas>
             </div>
-            <script>
-                (function () {
-                    const el = document.getElementById('inventoryChart');
-                    if (!el) return;
-                    const ctx = el.getContext('2d');
-                    const labels = ['OK', 'Faible', 'Rupture'];
-                    const data = [{{ $this->inventoryStatus['ok'] }}, {{ $this->inventoryStatus['low'] }}, {{ $this->inventoryStatus['out'] }}];
-                    if (window._inventoryChart) {
-                        try { window._inventoryChart.destroy(); } catch (e) {}
-                    }
-                    window._inventoryChart = new Chart(ctx, {
-                        type: 'doughnut',
-                        data: {
-                            labels,
-                            datasets: [{
-                                data,
-                                backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'],
-                                borderWidth: 0
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { position: 'bottom' }
-                            },
-                            cutout: '60%'
-                        }
-                    });
-                })();
-            </script>
             <div class="mt-4 grid grid-cols-2 gap-4">
                 <div>
                     <div class="text-sm font-medium mb-2">Stock faible (<=5)</div>

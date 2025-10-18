@@ -20,7 +20,7 @@ state(['tab' => 'sales']);
 // Promotion state
 state(['promo_showModal' => false]);
 state(['promo_editing' => null]);
-state(['promo_name' => '', 'promo_type' => 'percentage', 'promo_percentage' => 0, 'promo_days' => [], 'promo_starts_at' => null, 'promo_ends_at' => null]);
+state(['promo_name' => '', 'type' => 'percentage', 'promo_percentage' => 0, 'promo_amount' => 0, 'promo_days' => [], 'promo_active' => true, 'promo_starts_at' => null, 'promo_ends_at' => null]);
 
 // Reports filter state
 state(['r_from' => null, 'r_to' => null]);
@@ -28,7 +28,7 @@ state(['r_from' => null, 'r_to' => null]);
 // Product state
 state(['p_showModal' => false]);
 state(['p_editing' => null]);
-state(['p_name' => '', 'p_description' => '', 'p_price' => '', 'p_sku' => '', 'p_quantity' => 0, 'p_type' => 'service']);
+state(['p_name' => '', 'p_description' => '', 'p_price' => '', 'p_quantity' => 0, 'p_type' => 'service']);
 // Product deletion confirmation state
 state(['p_showDeleteModal' => false]);
 state(['p_deleteId' => null]);
@@ -40,7 +40,7 @@ state(['h_name' => '', 'h_phone' => '', 'h_specialty' => '']);
 
 // Sales state
 state(['s_showModal' => false]);
-state(['s_products' => [], 's_customer_name' => '', 's_total_amount' => 0]);
+state(['s_products' => [], 's_customer_name' => '', 's_customer_phone' => '', 's_total_amount' => 0]);
 state(['s_availableProducts' => []]);
 state(['s_hairdresser_id' => '']);
 state(['s_availableHairdressers' => []]);
@@ -63,10 +63,12 @@ state(['receiptLoading' => false]);
 // Promotion actions
 $promo_create = function () {
     if (! auth()->user()->hasRole('admin')) return;
-    $this->reset(['promo_name','promo_type','promo_percentage','promo_days','promo_starts_at','promo_ends_at','promo_editing']);
-    $this->promo_type = 'percentage';
+    $this->reset(['promo_name','type','promo_percentage','promo_amount','promo_days','promo_active','promo_starts_at','promo_ends_at','promo_editing']);
+    $this->type = 'percentage';
     $this->promo_percentage = 0;
+    $this->promo_amount = 0;
     $this->promo_days = [];
+    $this->promo_active = true;
     $this->promo_showModal = true;
 };
 
@@ -74,9 +76,12 @@ $promo_edit = function (Promotion $promotion) {
     if (! auth()->user()->hasRole('admin')) return;
     $this->promo_editing = $promotion;
     $this->promo_name = $promotion->name;
-    $this->promo_type = $promotion->type;
+    $this->type = $promotion->type;
     $this->promo_percentage = (float) $promotion->percentage;
-    $this->promo_days = $promotion->days_of_week ?? [];
+    $this->promo_amount = (float) ($promotion->amount ?? 0);
+    $days = $promotion->days_of_week ?? [];
+    $this->promo_days = is_array($days) ? array_map('intval', $days) : [];
+    $this->promo_active = (bool) $promotion->active;
     $this->promo_starts_at = optional($promotion->starts_at)->toDateString();
     $this->promo_ends_at = optional($promotion->ends_at)->toDateString();
     $this->promo_showModal = true;
@@ -84,25 +89,34 @@ $promo_edit = function (Promotion $promotion) {
 
 $promo_save = function () {
     if (! auth()->user()->hasRole('admin')) return;
-    $this->validate([
+    $rules = [
         'promo_name' => 'required|string|max:255',
-        'promo_type' => 'required|in:days,percentage',
-        'promo_percentage' => 'required|numeric|min:0|max:100',
-        'promo_days' => 'array',
+        'type' => 'required|in:days,percentage',
+        'promo_amount' => 'nullable|numeric|min:0',
+        'promo_days' => 'nullable|array',
         'promo_days.*' => 'integer|min:0|max:6',
         'promo_starts_at' => 'nullable|date',
         'promo_ends_at' => 'nullable|date|after_or_equal:promo_starts_at',
-    ]);
+    ];
+
+    if ($this->type === 'percentage') {
+        $rules['promo_percentage'] = 'required|numeric|min:0|max:100';
+    } else {
+        $rules['promo_percentage'] = 'nullable|numeric|min:0|max:100';
+    }
+
+    $this->validate($rules);
 
     $data = [
         'shop_id' => $this->shop->id,
         'name' => $this->promo_name,
-        'type' => $this->promo_type,
-        'percentage' => $this->promo_percentage,
-        'days_of_week' => $this->promo_type === 'days' ? array_values($this->promo_days ?? []) : null,
+        'type' => $this->type,
+        'percentage' => $this->promo_percentage ?: 0,
+        'amount' => $this->promo_amount ?: 0,
+        'days_of_week' => $this->type === 'days'  && !empty($this->promo_days) ? array_map('intval', (array) $this->promo_days) : null,
         'starts_at' => $this->promo_starts_at ?: null,
         'ends_at' => $this->promo_ends_at ?: null,
-        'active' => true,
+        'active' => (bool) $this->promo_active,
     ];
 
     if ($this->promo_editing) {
@@ -112,7 +126,7 @@ $promo_save = function () {
     }
 
     $this->promo_showModal = false;
-    $this->reset(['promo_name','promo_type','promo_percentage','promo_days','promo_starts_at','promo_ends_at','promo_editing']);
+    $this->reset(['promo_name','type','promo_percentage','promo_amount','promo_days','promo_active','promo_starts_at','promo_ends_at','promo_editing']);
 };
 
 $promo_toggleActive = function (Promotion $promotion) {
@@ -202,9 +216,18 @@ $reportProducts = computed(function () {
         ->map(function ($row) {
             $product = Product::find($row->product_id);
             $row->product_name = optional($product)->name;
-            $row->product_sku = optional($product)->sku;
             return $row;
         });
+});
+
+$reportCustomers = computed(function () {
+    return Sale::selectRaw('customer_name, customer_phone, COUNT(*) as visits, SUM(total_amount) as total_amount')
+        ->where('shop_id', $this->shop->id)
+        ->when($this->r_from, fn ($q) => $q->whereDate('sale_date', '>=', $this->r_from))
+        ->when($this->r_to, fn ($q) => $q->whereDate('sale_date', '<=', $this->r_to))
+        ->groupBy('customer_name', 'customer_phone')
+        ->orderByDesc(DB::raw('COUNT(*)'))
+        ->get();
 });
 
 mount(function (Shop $shop) {
@@ -218,7 +241,7 @@ mount(function (Shop $shop) {
 // Product actions
 $p_create = function () {
     if (! auth()->user()->hasRole('admin')) return;
-    $this->reset(['p_name','p_description','p_price','p_sku','p_quantity','p_editing','p_type']);
+    $this->reset(['p_name','p_description','p_price','p_quantity','p_editing','p_type']);
     $this->p_quantity = 0;
     $this->p_type = 'service';
     $this->p_showModal = true;
@@ -230,39 +253,24 @@ $p_edit = function (Product $product) {
     $this->p_name = $product->name;
     $this->p_description = $product->description;
     $this->p_price = $product->price;
-    $this->p_sku = $product->sku;
     $this->p_quantity = $product->quantity ?? 0;
     $this->p_type = $product->type ?? 'service';
     $this->p_showModal = true;
 };
 
-$p_generateSku = function () {
-    if (! $this->p_sku && $this->p_name) {
-        $base = strtoupper(preg_replace('/[^A-Z0-9]+/', '-', strtoupper(str_replace(' ', '-', $this->p_name))));
-        $base = trim(preg_replace('/-+/', '-', $base), '-');
-        $this->p_sku = $base ? $base . '-' . substr(str_shuffle('ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), 0, 4) : strtoupper(substr(str_shuffle('ABCDEFGHJKLMNPQRSTUVWXYZ23456789'), 0, 8));
-    }
-};
 
 $p_save = function () {
     if (! auth()->user()->hasRole('admin')) return;
-    // Auto-generate SKU if empty
-    if (! $this->p_sku) {
-        ($this->p_generateSku)();
-    }
-
     $this->validate([
         'p_name' => 'required|string|max:255',
         'p_description' => 'nullable|string',
         'p_price' => 'required|numeric|min:0',
-        'p_sku' => 'required|string|max:50|unique:products,sku' . ($this->p_editing ? ',' . $this->p_editing->id : ''),
         'p_type' => 'required|in:service,item',
         'p_quantity' => ($this->p_type === 'item') ? 'required|integer|min:0' : 'nullable|integer|min:0',
     ], [], [
         'p_name' => 'name',
         'p_description' => 'description',
         'p_price' => 'price',
-        'p_sku' => 'sku',
         'p_type' => 'type',
         'p_quantity' => 'quantity',
     ]);
@@ -275,7 +283,6 @@ $p_save = function () {
             'name' => $this->p_name,
             'description' => $this->p_description,
             'price' => $this->p_price,
-            'sku' => $this->p_sku,
             'type' => $this->p_type,
             'quantity' => $qty,
         ]);
@@ -285,14 +292,13 @@ $p_save = function () {
             'name' => $this->p_name,
             'description' => $this->p_description,
             'price' => $this->p_price,
-            'sku' => $this->p_sku,
             'type' => $this->p_type,
             'quantity' => $qty,
         ]);
     }
 
     $this->p_showModal = false;
-    $this->reset(['p_name','p_description','p_price','p_sku','p_quantity','p_editing','p_type']);
+    $this->reset(['p_name','p_description','p_price','p_quantity','p_editing','p_type']);
     session()->flash('message', 'Produit enregistré avec succès !');
 };
 
@@ -383,7 +389,7 @@ $s_loadPromotions = function () {
 };
 
 $s_create = function () {
-    $this->reset(['s_products','s_customer_name','s_total_amount','s_hairdresser_id','s_promotion_id']);
+    $this->reset(['s_products','s_customer_name','s_customer_phone','s_total_amount','s_hairdresser_id','s_promotion_id']);
     $this->s_products = [['product_id' => '', 'quantity' => 1, 'unit_price' => 0, 'subtotal' => 0]];
     $this->s_loadProducts();
     $this->s_loadHairdressers();
@@ -405,8 +411,18 @@ $s_updateProduct = function ($index) {
     $product = $this->s_availableProducts->find($this->s_products[$index]['product_id']);
     if ($product) {
         $this->s_products[$index]['unit_price'] = $product->price;
-        $qty = ($product->type === 'service') ? 1 : (int)($this->s_products[$index]['quantity'] ?? 1);
-        // Force quantity to 1 for services
+
+        if ($product->type === 'service') {
+            $qty = 1; // services are always quantity 1
+        } else {
+            $requested = (int)($this->s_products[$index]['quantity'] ?? 1);
+            $requested = max(1, $requested);
+            $stock = (int)($product->quantity ?? 0);
+            // Cap requested quantity to available stock if stock is positive
+            $qty = $stock > 0 ? min($requested, $stock) : $requested;
+        }
+
+        // Apply normalized quantity and subtotal
         $this->s_products[$index]['quantity'] = $qty;
         $this->s_products[$index]['subtotal'] = $product->price * ($product->type === 'service' ? 1 : $qty);
         $this->s_calculateTotal();
@@ -419,6 +435,8 @@ $s_calculateTotal = function () {
 
 $s_showAssign = function (Sale $sale) {
     $this->s_selectedSale = $sale;
+    // Ensure hairdressers list is up-to-date
+    $this->s_loadHairdressers();
     // Preload sale-level hairdresser
     $this->s_hairdresser_id = $sale->hairdresser_id;
 
@@ -429,7 +447,7 @@ $s_saveAssignments = function () {
     if ($this->s_selectedSale) {
         // Update sale-level hairdresser if provided
         $this->s_selectedSale->hairdresser_id = $this->s_hairdresser_id ?: null;
-        $this->s_selectedSale->status = 'assigned';
+        $this->s_selectedSale->status = $this->s_hairdresser_id ? 'assigned' : 'pending';
         $this->s_selectedSale->save();
     }
 
@@ -446,6 +464,7 @@ $generateReceipt = function (Sale $sale) {
 $s_save = function () {
     $this->validate([
         's_customer_name' => 'required|string|max:255',
+        's_customer_phone' => 'nullable|string|max:20',
         's_products' => 'required|array|min:1',
         's_products.*.product_id' => 'required|exists:products,id',
         's_products.*.quantity' => 'required|integer|min:1',
@@ -471,11 +490,12 @@ $s_save = function () {
         'shop_id' => $this->shop->id,
         'user_id' => auth()->id(),
         'customer_name' => $this->s_customer_name,
+                'customer_phone' => $this->s_customer_phone ?: null,
         'sale_date' => now(),
         'total_amount' => $this->s_total_amount,
         'hairdresser_id' => $this->s_hairdresser_id ?: null,
         'promotion_id' => $this->s_promotion_id ?: null,
-        'status' => 'pending',
+        'status' => ($this->s_hairdresser_id ? 'assigned' : 'pending'),
     ]);
 
     // Apply promotion: selected one takes precedence, else active shop promotion (if any)
@@ -502,10 +522,10 @@ $s_save = function () {
     }
 
     $this->s_showModal = false;
-    $this->reset(['s_products','s_customer_name','s_total_amount','s_promotion_id','s_hairdresser_id']);
+    $this->reset(['s_products','s_customer_name','s_customer_phone','s_total_amount','s_promotion_id','s_hairdresser_id']);
 
-    // Redirect to auto-print receipt
-    return $this->redirect(route('receipts.auto-print', $sale), navigate: false);
+    // Redirect to print receipt directly
+    return $this->redirect(route('receipts.print', $sale), navigate: false);
 };
 
 // Confirm delete sale (admin only)
@@ -561,10 +581,7 @@ $s_deleteSale = function () {
             @endif
         </div>
         <div class="space-x-2">
-            @role('admin')
-            <a href="{{ route('products') }}" class="underline text-sm">Tous les produits</a>
-            @endrole
-            <a href="{{ route('sales') }}" class="underline text-sm">Ventes</a>
+            <a href="{{ route('sales') }}" class="underline text-sm">Ensenble des ventes</a>
             <a href="{{ route('shops') }}" class="underline text-sm">Retour aux boutiques</a>
         </div>
     </div>
@@ -575,25 +592,34 @@ $s_deleteSale = function () {
             <div role="tablist" aria-label="Sections de la boutique" class="flex lg:flex-col gap-2">
                 @role('admin')
                 <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'products' ? 'bg-muted' : '' }}" wire:click="$set('tab','products')">
-                    Liste des Produits
+                    Liste des produits
                 </flux:button>
                 <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'hairdressers' ? 'bg-muted' : '' }}" wire:click="$set('tab','hairdressers')">
-                    Liste des Coiffeurs
+                    Liste des coiffeurs
+                </flux:button>
+                <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'promotions' ? 'bg-muted' : '' }}" wire:click="$set('tab','promotions')">
+                    Promotions
                 </flux:button>
                 @endrole
 
                 @role('admin|vendeur')
                 <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'sales' ? 'bg-muted' : '' }}" wire:click="$set('tab','sales')">
-                    Ventes
+                    Ventes quotidiennes
                 </flux:button>
                 @endrole
 
                 @role('admin')
-                <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'reports' ? 'bg-muted' : '' }}" wire:click="$set('tab','reports')">
-                    Rapports
+                <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'report_sales' ? 'bg-muted' : '' }}" wire:click="$set('tab','report_sales')">
+                    Rapports sur les ventes
                 </flux:button>
-                <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'promotions' ? 'bg-muted' : '' }}" wire:click="$set('tab','promotions')">
-                    Promotions
+                <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'report_hairdressers' ? 'bg-muted' : '' }}" wire:click="$set('tab','report_hairdressers')">
+                    Rapports sur les coiffeurs
+                </flux:button>
+                <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'report_products' ? 'bg-muted' : '' }}" wire:click="$set('tab','report_products')">
+                    Rapports par produits roduits
+                </flux:button>
+                <flux:button variant="ghost" class="justify-start w-full {{ $tab === 'report_customers' ? 'bg-muted' : '' }}" wire:click="$set('tab','report_customers')">
+                    Rapports clients
                 </flux:button>
                 @endrole
             </div>
@@ -604,113 +630,114 @@ $s_deleteSale = function () {
             @if($tab === 'products')
                 <div>
                     <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-xl font-semibold">Produits</h2>
+                        <h2 class="text-xl font-semibold">Liste des produits</h2>
                         @role('admin')
                         <flux:button wire:click="p_create">Ajouter un produit</flux:button>
                         @endrole
                     </div>
 
-                    <div class="overflow-x-auto">
-                    <flux:table>
-                        <flux:table.columns>
-                            <flux:table.column>Nom</flux:table.column>
-                            <flux:table.column>SKU</flux:table.column>
-                            <flux:table.column>Prix</flux:table.column>
-                            <flux:table.column>Type</flux:table.column>
-                            <flux:table.column>Disponible</flux:table.column>
-                            <flux:table.column></flux:table.column>
-                        </flux:table.columns>
-                        <flux:table.rows>
-                            @foreach($this->products as $product)
-                                <flux:table.row wire:key="p-{{ $product->id }}">
-                                    <flux:table.cell>{{ $product->name }}</flux:table.cell>
-                                    <flux:table.cell>{{ $product->sku }}</flux:table.cell>
-                                    <flux:table.cell>{{ number_format($product->price, 2) }}</flux:table.cell>
-                                    <flux:table.cell>{{ $product->type === 'item' ? 'Item' : 'Service' }}</flux:table.cell>
-                                    <flux:table.cell>{{ $product->quantity ?? 0 }}</flux:table.cell>
-                                    <flux:table.cell>
-                                        @role('admin')
-                                        <flux:button variant="ghost" size="sm" wire:click="p_edit({{ $product->id }})">Modifier</flux:button>
-                                        <flux:button variant="ghost" size="sm" wire:click="p_confirmDelete({{ $product->id }})">Supprimer</flux:button>
-                                        @endrole
-                                    </flux:table.cell>
-                                </flux:table.row>
-                            @endforeach
-                        </flux:table.rows>
-                    </flux:table>
-                    </div>
+                    <flux:card>
+                        <div class="overflow-x-auto">
+                            <flux:table>
+                                <flux:table.columns>
+                                    <flux:table.column>Nom</flux:table.column>
+                                    <flux:table.column>Prix</flux:table.column>
+                                    <flux:table.column>Type</flux:table.column>
+                                    <flux:table.column>Disponible</flux:table.column>
+                                    <flux:table.column></flux:table.column>
+                                </flux:table.columns>
+                                <flux:table.rows>
+                                    @foreach($this->products as $product)
+                                        <flux:table.row wire:key="p-{{ $product->id }}">
+                                            <flux:table.cell>{{ $product->name }}</flux:table.cell>
+                                            <flux:table.cell>{{ number_format($product->price, 2) }}</flux:table.cell>
+                                            <flux:table.cell>{{ $product->type === 'item' ? 'Item' : 'Service' }}</flux:table.cell>
+                                            <flux:table.cell>{{ $product->quantity ?? 0 }}</flux:table.cell>
+                                            <flux:table.cell>
+                                                @role('admin')
+                                                <flux:button variant="ghost" size="sm" wire:click="p_edit({{ $product->id }})">Modifier</flux:button>
+                                                <flux:button variant="danger" size="sm" wire:click="p_confirmDelete({{ $product->id }})">Supprimer</flux:button>
+                                                @endrole
+                                            </flux:table.cell>
+                                        </flux:table.row>
+                                    @endforeach
+                                </flux:table.rows>
+                            </flux:table>
+                        </div>
 
-                    <div class="mt-2">
-                        {{ $this->products->links() }}
-                    </div>
+                        <div class="mt-2">
+                            {{ $this->products->links() }}
+                        </div>
+                    </flux:card>
                 </div>
             @elseif($tab === 'hairdressers')
                 <div>
                     <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-xl font-semibold">Coiffeurs</h2>
+                        <h2 class="text-xl font-semibold">Liste des coiffeurs</h2>
                         @role('admin')
                         <flux:button wire:click="h_create">Ajouter un coiffeur</flux:button>
                         @endrole
                     </div>
 
-                    <div class="overflow-x-auto">
-                    <flux:table>
-                        <flux:table.columns>
-                            <flux:table.column>Nom</flux:table.column>
-                            <flux:table.column>Téléphone</flux:table.column>
-                            <flux:table.column>Spécialité</flux:table.column>
-                            <flux:table.column></flux:table.column>
-                        </flux:table.columns>
-                        <flux:table.rows>
-                            @foreach($this->hairdressers as $hairdresser)
-                                <flux:table.row wire:key="h-{{ $hairdresser->id }}">
-                                    <flux:table.cell>{{ $hairdresser->name }}</flux:table.cell>
-                                    <flux:table.cell>{{ $hairdresser->phone }}</flux:table.cell>
-                                    <flux:table.cell>{{ $hairdresser->specialty }}</flux:table.cell>
-                                    <flux:table.cell>
-                                        @role('admin')
-                                        <flux:button variant="ghost" size="sm" wire:click="h_edit({{ $hairdresser->id }})">Modifier</flux:button>
-                                        <flux:button variant="ghost" size="sm" wire:click="h_delete({{ $hairdresser->id }})">Supprimer</flux:button>
-                                        @endrole
-                                    </flux:table.cell>
-                                </flux:table.row>
-                            @endforeach
-                        </flux:table.rows>
-                    </flux:table>
-                    </div>
+                    <flux:card class="space-y-6">
+                        <div class="overflow-x-auto">
+                            <flux:table>
+                                <flux:table.columns>
+                                    <flux:table.column>Nom</flux:table.column>
+                                    <flux:table.column>Téléphone</flux:table.column>
+                                    <flux:table.column>Spécialité</flux:table.column>
+                                    <flux:table.column></flux:table.column>
+                                </flux:table.columns>
+                                <flux:table.rows>
+                                    @foreach($this->hairdressers as $hairdresser)
+                                        <flux:table.row wire:key="h-{{ $hairdresser->id }}">
+                                            <flux:table.cell>{{ $hairdresser->name }}</flux:table.cell>
+                                            <flux:table.cell>{{ $hairdresser->phone }}</flux:table.cell>
+                                            <flux:table.cell>{{ $hairdresser->specialty }}</flux:table.cell>
+                                            <flux:table.cell>
+                                                @role('admin')
+                                                <flux:button variant="ghost" size="sm" wire:click="h_edit({{ $hairdresser->id }})">Modifier</flux:button>
+                                                <flux:button variant="danger" size="sm" wire:click="h_delete({{ $hairdresser->id }})">Supprimer</flux:button>
+                                                @endrole
+                                            </flux:table.cell>
+                                        </flux:table.row>
+                                    @endforeach
+                                </flux:table.rows>
+                            </flux:table>
+                        </div>
 
-                    <div class="mt-2">
-                        {{ $this->hairdressers->links() }}
-                    </div>
+                        <div class="mt-2">
+                            {{ $this->hairdressers->links() }}
+                        </div>
+                    </flux:card>
                 </div>
             @elseif($tab === 'sales')
                 <div>
                     <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-xl font-semibold">Ventes</h2>
+                        <h2 class="text-xl font-semibold">Liste des ventes</h2>
                         <div class="flex items-center gap-2">
                             <div>
                                 <flux:input type="date" wire:model.live="s_date" />
                             </div>
-                            <flux:button size="sm" wire:click="s_create">Ajouter une vente</flux:button>
-                            <a class="underline text-sm" href="{{ route('sales') }}">Aller aux ventes</a>
+                            <flux:button wire:click="s_create">Ajouter une vente</flux:button>
                         </div>
                     </div>
 
                     <!-- Daily stats -->
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                        <div class="p-3 rounded border bg-white">
+                        <div class="p-3 rounded-xl border bg-white">
                             <div class="text-xs text-gray-500">Ventes du jour</div>
                             <div class="text-2xl font-semibold">{{ $this->salesStats['totalSales'] ?? 0 }}</div>
                         </div>
-                        <div class="p-3 rounded border bg-white">
+                        <div class="p-3 rounded-xl border bg-white">
                             <div class="text-xs text-gray-500">Montant total du jour</div>
                             <div class="text-2xl font-semibold">{{ number_format($this->salesStats['totalAmount'] ?? 0, 2) }}</div>
                         </div>
-                        <div class="p-3 rounded border bg-white">
+                        <div class="p-3 rounded-xl border bg-white">
                             <div class="text-xs text-gray-500">Tickets</div>
                             <div class="text-2xl font-semibold">{{ $this->salesStats['tickets'] ?? 0 }}</div>
                         </div>
-                        <div class="p-3 rounded border bg-white md:col-span-3">
+                        <div class="p-3 rounded-xl border bg-white md:col-span-3">
                             <div class="text-xs text-gray-500">Ventes par coiffeur</div>
                             <div class="text-sm mt-1 space-y-1">
                                 @forelse(($this->salesStats['perHairdresser'] ?? []) as $row)
@@ -725,80 +752,82 @@ $s_deleteSale = function () {
                         </div>
                     </div>
 
-                    <div class="overflow-x-auto">
-                    <flux:table>
-                        <flux:table.columns>
-                            <flux:table.column>Date</flux:table.column>
-                            <flux:table.column>Ticket</flux:table.column>
-                            <flux:table.column>Client</flux:table.column>
-                            <flux:table.column>Total</flux:table.column>
-                            <flux:table.column>Promotion</flux:table.column>
-                            <flux:table.column>Statut</flux:table.column>
-                            <flux:table.column>Coiffeur</flux:table.column>
-                            <flux:table.column>Actions</flux:table.column>
-                        </flux:table.columns>
-                        <flux:table.rows>
-                            @forelse($this->sales as $sale)
-                                <flux:table.row wire:key="s-{{ $sale->id }}">
-                                    <flux:table.cell>{{ \Illuminate\Support\Carbon::parse($sale->sale_date)->format('Y-m-d H:i') }}</flux:table.cell>
-                                    <flux:table.cell>{{ $sale->receipt?->receipt_number ?? '—' }}</flux:table.cell>
-                                    <flux:table.cell>{{ $sale->customer_name }}</flux:table.cell>
-                                    <flux:table.cell>{{ number_format($sale->total_amount, 2) }}</flux:table.cell>
-                                    <flux:table.cell>
-                                        @if($sale->promotion)
-                                            <div class="text-sm">
-                                                <div class="font-medium">{{ $sale->promotion->name }}</div>
-                                                @if(!is_null($sale->discount_amount))
-                                                    <div class="text-gray-600">-{{ number_format($sale->discount_amount, 2) }}</div>
+                    <flux:card class="space-y-6">
+                        <div class="overflow-x-auto">
+                            <flux:table>
+                                <flux:table.columns>
+                                    <flux:table.column>Date</flux:table.column>
+                                    <flux:table.column>Ticket</flux:table.column>
+                                    <flux:table.column>Client</flux:table.column>
+                                    <flux:table.column>Total</flux:table.column>
+                                    <flux:table.column>Promotion</flux:table.column>
+                                    <flux:table.column>Statut</flux:table.column>
+                                    <flux:table.column>Coiffeur</flux:table.column>
+                                    <flux:table.column>Actions</flux:table.column>
+                                </flux:table.columns>
+                                <flux:table.rows>
+                                    @forelse($this->sales as $sale)
+                                        <flux:table.row wire:key="s-{{ $sale->id }}">
+                                            <flux:table.cell>{{ \Illuminate\Support\Carbon::parse($sale->sale_date)->format('Y-m-d H:i') }}</flux:table.cell>
+                                            <flux:table.cell>{{ $sale->receipt?->receipt_number ?? '—' }}</flux:table.cell>
+                                            <flux:table.cell>{{ $sale->customer_name }}</flux:table.cell>
+                                            <flux:table.cell>
+                                                @if(!empty($sale->discount_amount))
+                                                    <div class="text-sm text-gray-500 line-through">{{ number_format($sale->total_amount, 2) }}</div>
+                                                    <div class="font-semibold">{{ number_format($sale->total_amount - $sale->discount_amount, 2) }}</div>
+                                                @else
+                                                    {{ number_format($sale->total_amount, 2) }}
                                                 @endif
-                                            </div>
-                                        @else
-                                            —
-                                        @endif
-                                    </flux:table.cell>
-                                    <flux:table.cell>
-                                        <flux:badge color="{{ $sale->status === 'completed' ? 'green' : ($sale->status === 'assigned' ? 'yellow' : 'gray') }}">
-                                            {{ ucfirst($sale->status) }}
-                                        </flux:badge>
-                                    </flux:table.cell>
-                                    <flux:table.cell>
-                                        {{ $sale->hairdresser?->name ?? '—' }}
-                                    </flux:table.cell>
-                                    <flux:table.cell>
-                                        <div class="flex flex-wrap items-center gap-2">
-                                            @if($sale->status === 'pending')
-                                                <flux:button size="sm" wire:click="s_showAssign({{ $sale->id }})">Attribuer</flux:button>
-                                            @endif
-                                            <a href="{{ route('receipts.print', $sale) }}" target="_blank" class="text-sm underline ml-2">
-                                                Reçu
-                                            </a>
-                                            <a href="{{ route('receipts.pdf', $sale) }}" target="_blank" class="text-sm underline">
-                                                PDF
-                                            </a>
-                                            <a href="{{ route('receipts.auto-print', $sale) }}" target="_blank" class="text-sm underline">
-                                                Imprimer
-                                            </a>
-                                            <a class="text-sm underline" href="{{ route('sales') }}">Voir</a>
-                                            @role('admin')
-                                                <flux:button size="sm" variant="danger" wire:click="s_confirmDeleteSale({{ $sale->id }})">Supprimer</flux:button>
-                                            @endrole
-                                        </div>
-                                    </flux:table.cell>
-                                </flux:table.row>
-                            @empty
-                                <flux:table.row>
-                                    <flux:table.cell colspan="7">Aucune vente pour le moment.</flux:table.cell>
-                                </flux:table.row>
-                            @endforelse
-                        </flux:table.rows>
-                    </flux:table>
-                    </div>
+                                            </flux:table.cell>
+                                            <flux:table.cell>
+                                                @if($sale->promotion)
+                                                    <div class="text-sm">
+                                                        <div class="font-medium">{{ $sale->promotion->name }}</div>
+                                                        @if(!is_null($sale->discount_amount))
+                                                            <div class="text-gray-600">-{{ number_format($sale->discount_amount, 2) }}</div>
+                                                        @endif
+                                                    </div>
+                                                @else
+                                                    —
+                                                @endif
+                                            </flux:table.cell>
+                                            <flux:table.cell>
+                                                <flux:badge color="{{ $sale->status === 'completed' ? 'green' : ($sale->status === 'assigned' ? 'yellow' : 'gray') }}">
+                                                    {{ $sale->status === 'assigned' ? 'Assigner' : 'en attente' }}
+                                                </flux:badge>
+                                            </flux:table.cell>
+                                            <flux:table.cell>
+                                                {{ $sale->hairdresser?->name ?? '—' }}
+                                            </flux:table.cell>
+                                            <flux:table.cell>
+                                                <div class="flex flex-wrap items-center gap-2">
+                                                    @if(!$sale->hairdresser_id)
+                                                        <flux:button size="sm" wire:click="s_showAssign({{ $sale->id }})">Attribuer</flux:button>
+                                                    @endif
+                                                    <a href="{{ route('receipts.print', $sale) }}" target="_blank" class="text-sm underline ml-2">
+                                                        Reçu
+                                                    </a>
+                                                    @role('admin')
+                                                    <flux:button size="sm" variant="danger" wire:click="s_confirmDeleteSale({{ $sale->id }})">Supprimer</flux:button>
+                                                    @endrole
+                                                </div>
+                                            </flux:table.cell>
+                                        </flux:table.row>
+                                    @empty
+                                        <flux:table.row>
+                                            <flux:table.cell colspan="7">Aucune vente pour le moment.</flux:table.cell>
+                                        </flux:table.row>
+                                    @endforelse
+                                </flux:table.rows>
+                            </flux:table>
+                        </div>
 
-                    <div class="mt-2">
-                        {{ $this->sales->links() }}
-                    </div>
+                        <div class="mt-2">
+                            {{ $this->sales->links() }}
+                        </div>
+                    </flux:card>
                 </div>
-            @elseif($tab === 'reports')
+            @elseif($tab === 'report_sales')
                 <div class="space-y-8">
                     <div class="flex flex-wrap items-end gap-3 mb-4">
                         <div>
@@ -832,7 +861,7 @@ $s_deleteSale = function () {
                                         <flux:table.cell>{{ optional($rs->sale_date)->format('Y-m-d H:i') }}</flux:table.cell>
                                         <flux:table.cell>{{ $rs->customer_name }}</flux:table.cell>
                                         <flux:table.cell>{{ $rs->hairdresser?->name ?? '—' }}</flux:table.cell>
-                                        <flux:table.cell>{{ ucfirst($rs->status) }}</flux:table.cell>
+                                        <flux:table.cell>{{ $rs->status === 'assigned' ? 'Assigner' : 'en attente' }}</flux:table.cell>
                                         <flux:table.cell>{{ number_format($rs->total_amount, 2) }}</flux:table.cell>
                                     </flux:table.row>
                                 @empty
@@ -844,7 +873,22 @@ $s_deleteSale = function () {
                         </flux:table>
                         </div>
                     </div>
-
+                </div>
+            @elseif($tab === 'report_hairdressers')
+                <div class="space-y-8">
+                    <div class="flex flex-wrap items-end gap-3 mb-4">
+                        <div>
+                            <flux:label>De</flux:label>
+                            <flux:input type="date" wire:model.live="r_from" />
+                        </div>
+                        <div>
+                            <flux:label>À</flux:label>
+                            <flux:input type="date" wire:model.live="r_to" />
+                        </div>
+                        <div class="ml-auto text-sm text-gray-500">
+                            Les filtres s’appliquent aux aperçus
+                        </div>
+                    </div>
                     <div>
                         <div class="flex items-center justify-between mb-2">
                             <h2 class="text-xl font-semibold">{{ __('Rapports sur les coiffeurs') }}</h2>
@@ -872,7 +916,22 @@ $s_deleteSale = function () {
                         </flux:table>
                         </div>
                     </div>
-
+                </div>
+            @elseif($tab === 'report_products')
+                <div class="space-y-8">
+                    <div class="flex flex-wrap items-end gap-3 mb-4">
+                        <div>
+                            <flux:label>De</flux:label>
+                            <flux:input type="date" wire:model.live="r_from" />
+                        </div>
+                        <div>
+                            <flux:label>À</flux:label>
+                            <flux:input type="date" wire:model.live="r_to" />
+                        </div>
+                        <div class="ml-auto text-sm text-gray-500">
+                            Les filtres s’appliquent aux aperçus
+                        </div>
+                    </div>
                     <div>
                         <div class="flex items-center justify-between mb-2">
                             <h2 class="text-xl font-semibold">{{ __('Rapports sur les produits') }}</h2>
@@ -881,7 +940,6 @@ $s_deleteSale = function () {
                         <flux:table>
                             <flux:table.columns>
                                 <flux:table.column>{{ __('Product') }}</flux:table.column>
-                                <flux:table.column>{{ __('SKU') }}</flux:table.column>
                                 <flux:table.column>{{ __('Quantité total') }}</flux:table.column>
                                 <flux:table.column>{{ __('Total revenu') }}</flux:table.column>
                             </flux:table.columns>
@@ -889,13 +947,57 @@ $s_deleteSale = function () {
                                 @forelse($this->reportProducts as $rp)
                                     <flux:table.row>
                                         <flux:table.cell>{{ $rp->product_name ?? '—' }}</flux:table.cell>
-                                        <flux:table.cell>{{ $rp->product_sku ?? '' }}</flux:table.cell>
                                         <flux:table.cell>{{ $rp->total_qty }}</flux:table.cell>
                                         <flux:table.cell>{{ number_format($rp->total_revenue, 2) }}</flux:table.cell>
                                     </flux:table.row>
                                 @empty
                                     <flux:table.row>
-                                        <flux:table.cell colspan="4">{{ __('No product data.') }}</flux:table.cell>
+                                        <flux:table.cell colspan="3">{{ __('No product data.') }}</flux:table.cell>
+                                    </flux:table.row>
+                                @endforelse
+                            </flux:table.rows>
+                        </flux:table>
+                        </div>
+                    </div>
+                </div>
+            @elseif($tab === 'report_customers')
+                <div class="space-y-8">
+                    <div class="flex flex-wrap items-end gap-3 mb-4">
+                        <div>
+                            <flux:label>De</flux:label>
+                            <flux:input type="date" wire:model.live="r_from" />
+                        </div>
+                        <div>
+                            <flux:label>À</flux:label>
+                            <flux:input type="date" wire:model.live="r_to" />
+                        </div>
+                        <div class="ml-auto text-sm text-gray-500">
+                            Les filtres s’appliquent aux aperçus
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <h2 class="text-xl font-semibold">Rapports: Clients</h2>
+                        </div>
+                        <div class="overflow-x-auto">
+                        <flux:table>
+                            <flux:table.columns>
+                                <flux:table.column>{{ __('Client') }}</flux:table.column>
+                                <flux:table.column>{{ __('Téléphone') }}</flux:table.column>
+                                <flux:table.column>{{ __('Visites') }}</flux:table.column>
+                                <flux:table.column>{{ __('Montant total') }}</flux:table.column>
+                            </flux:table.columns>
+                            <flux:table.rows>
+                                @forelse($this->reportCustomers as $rc)
+                                    <flux:table.row>
+                                        <flux:table.cell>{{ $rc->customer_name ?? '—' }}</flux:table.cell>
+                                        <flux:table.cell>{{ $rc->customer_phone ?? '—' }}</flux:table.cell>
+                                        <flux:table.cell>{{ $rc->visits }}</flux:table.cell>
+                                        <flux:table.cell>{{ number_format($rc->total_amount, 2) }}</flux:table.cell>
+                                    </flux:table.row>
+                                @empty
+                                    <flux:table.row>
+                                        <flux:table.cell colspan="4">{{ __('No customer data.') }}</flux:table.cell>
                                     </flux:table.row>
                                 @endforelse
                             </flux:table.rows>
@@ -916,8 +1018,8 @@ $s_deleteSale = function () {
                     <flux:table>
                         <flux:table.columns>
                             <flux:table.column>Nom</flux:table.column>
-                            <flux:table.column>Type</flux:table.column>
                             <flux:table.column>Pourcentage</flux:table.column>
+                            <flux:table.column>Montant</flux:table.column>
                             <flux:table.column>Jours</flux:table.column>
                             <flux:table.column>Actif</flux:table.column>
                             <flux:table.column>Période</flux:table.column>
@@ -927,8 +1029,8 @@ $s_deleteSale = function () {
                             @forelse($this->promotions as $promo)
                                 <flux:table.row wire:key="promo-{{ $promo->id }}">
                                     <flux:table.cell>{{ $promo->name }}</flux:table.cell>
-                                    <flux:table.cell>{{ $promo->type === 'days' ? 'Par jours' : 'Pourcentage global' }}</flux:table.cell>
                                     <flux:table.cell>{{ number_format($promo->percentage, 2) }}%</flux:table.cell>
+                                    <flux:table.cell>{{ is_null($promo->amount) ? '—' : number_format($promo->amount, 2) }}</flux:table.cell>
                                     <flux:table.cell>
                                         @if($promo->type === 'days')
                                             @php
@@ -980,7 +1082,7 @@ $s_deleteSale = function () {
             <div class="space-y-4">
                 <div>
                     <flux:label>{{ __('Nom') }}</flux:label>
-                    <flux:input wire:model="p_name" wire:change="p_generateSku" required />
+                    <flux:input wire:model="p_name" required />
                     @error('p_name') <flux:error>{{ $message }}</flux:error> @enderror
                 </div>
                 <div>
@@ -996,24 +1098,21 @@ $s_deleteSale = function () {
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <flux:label>Type</flux:label>
-                        <flux:select wire:model="p_type">
+                        <flux:select wire:model.live="p_type">
                             <option value="service">Service</option>
                             <option value="item">Item</option>
                         </flux:select>
                         @error('p_type') <flux:error>{{ $message }}</flux:error> @enderror
                     </div>
-                    <div>
-                        <flux:label>{{ __('SKU') }}</flux:label>
-                        <flux:input wire:model="p_sku" placeholder="{{ __('Auto-generated if empty') }}" />
-                        @error('p_sku') <flux:error>{{ $message }}</flux:error> @enderror
-                    </div>
                 </div>
+                @if($p_type === 'item')
                 <div>
                     <flux:label>{{ __('Quantité') }}</flux:label>
-                    <flux:input wire:model="p_quantity" type="number" min="0" @if($p_type === 'service') disabled @endif />
-                    <small class="text-gray-500">@if($p_type === 'service') La quantité est ignorée pour les services. @else Entrez le stock disponible. @endif</small>
+                    <flux:input wire:model="p_quantity" type="number" min="0" />
+                    <small class="text-gray-500">Entrez le stock disponible.</small>
                     @error('p_quantity') <flux:error>{{ $message }}</flux:error> @enderror
                 </div>
+                @endif
             </div>
             <flux:button type="button" variant="ghost" wire:click="$set('p_showModal', false)">{{ __('Annulé') }}</flux:button>
             <flux:button type="submit">{{ __('Enregistré') }}</flux:button>
@@ -1056,37 +1155,23 @@ $s_deleteSale = function () {
                     <flux:input wire:model="promo_name" required />
                     @error('promo_name') <flux:error>{{ $message }}</flux:error> @enderror
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <flux:label>Type</flux:label>
-                        <flux:select wire:model="promo_type">
-                            <option value="percentage">Pourcentage global</option>
-                            <option value="days">Par jours (jours de la semaine)</option>
-                        </flux:select>
-                        @error('promo_type') <flux:error>{{ $message }}</flux:error> @enderror
-                    </div>
-                    <div>
-                        <flux:label>Pourcentage (%)</flux:label>
-                        <flux:input wire:model="promo_percentage" type="number" step="0.01" min="0" max="100" required />
-                        @error('promo_percentage') <flux:error>{{ $message }}</flux:error> @enderror
-                    </div>
-                </div>
-                <div x-data="{ type: @entangle('promo_type') }">
-                    <template x-if="type === 'days')"></template>
+                <div>
+                    <flux:label>Pourcentage (%)</flux:label>
+                    <flux:input wire:model.live="promo_percentage" type="number" step="0.01" min="0" max="100"  />
+                    @error('promo_percentage') <flux:error>{{ $message }}</flux:error> @enderror
                 </div>
                 <div>
-                    @if($promo_type === 'days')
-                        <flux:label>Jours de la semaine</flux:label>
-                        <div class="grid grid-cols-7 gap-2 text-sm">
-                            @php $days = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam']; @endphp
-                            @foreach($days as $i => $d)
-                                <label class="inline-flex items-center gap-1">
-                                    <input type="checkbox" value="{{ $i }}" wire:model="promo_days"> {{ $d }}
-                                </label>
-                            @endforeach
-                        </div>
-                        @error('promo_days') <flux:error>{{ $message }}</flux:error> @enderror
-                    @endif
+                    <flux:label>Jours de la semaine</flux:label>
+                    <flux:select variant="listbox" multiple wire:model.live="promo_days" size="7">
+                        <flux:select.option value="0">Dimanche</flux:select.option>
+                        <flux:select.option value="1">Lundi</flux:select.option>
+                        <flux:select.option value="2">Mardi</flux:select.option>
+                        <flux:select.option value="3">Mercredi</flux:select.option>
+                        <flux:select.option value="4">Jeudi</flux:select.option>
+                        <flux:select.option value="5">Vendredi</flux:select.option>
+                        <flux:select.option value="6">Samedi</flux:select.option>
+                    </flux:select>
+                    @error('promo_days') <flux:error>{{ $message }}</flux:error> @enderror
                 </div>
                 <div class="grid grid-cols-2 gap-3">
                     <div>
@@ -1098,6 +1183,19 @@ $s_deleteSale = function () {
                         <flux:label>Fin</flux:label>
                         <flux:input type="date" wire:model="promo_ends_at" />
                         @error('promo_ends_at') <flux:error>{{ $message }}</flux:error> @enderror
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 items-end">
+                    <div>
+                        <flux:label>Montant</flux:label>
+                        <flux:input wire:model.live="promo_amount" type="number" step="0.01" min="0" />
+                        @error('promo_amount') <flux:error>{{ $message }}</flux:error> @enderror
+                    </div>
+                    <div class="mt-6">
+                        <label class="inline-flex items-center gap-2">
+                            <input type="checkbox" wire:model="promo_active" />
+                            <span>Activer la promotion</span>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -1117,8 +1215,13 @@ $s_deleteSale = function () {
                 </div>
                 <div>
                     <flux:label>Client</flux:label>
-                    <flux:input wire:model="s_customer_name" type="text" placeholder="Enter customer name" required />
+                    <flux:input wire:model="s_customer_name" type="text" placeholder="Nom du client" required />
                     @error('s_customer_name') <flux:error>{{ $message }}</flux:error> @enderror
+                </div>
+                <div>
+                    <flux:label>Téléphone du client (optionnel)</flux:label>
+                    <flux:input wire:model="s_customer_phone" type="text" placeholder="Ex: 07 12 34 56 78" />
+                    @error('s_customer_phone') <flux:error>{{ $message }}</flux:error> @enderror
                 </div>
                 <div>
                     <flux:label>Coiffeur (optionelle)</flux:label>
@@ -1134,43 +1237,62 @@ $s_deleteSale = function () {
                     <flux:select wire:model="s_promotion_id">
                         <option value="">Aucune</option>
                         @foreach($s_availablePromotions as $pr)
-                            <option value="{{ $pr->id }}">{{ $pr->name }} ({{ number_format($pr->percentage, 0) }}%)</option>
+                            <option value="{{ $pr->id }}">
+                                {{ $pr->name }} ({{ (($pr->percentage ?? 0) > 0) ? (number_format($pr->percentage, 0) . '%') : ((!is_null($pr->amount) && $pr->amount > 0) ? ('-' . number_format($pr->amount, 2)) : '0%') }})
+                            </option>
                         @endforeach
                     </flux:select>
                     <small class="text-gray-500">Optionnel: Appliquer un code promotion à cette vente.</small>
                 </div>
                 <div>
-                    <div class="flex justify-between items-center mb-2">
-                        <flux:label>Produits</flux:label>
-                        <flux:button type="button" size="sm" wire:click="s_addProduct">Ajouter produits</flux:button>
+                    <div class="mb-2">
+                        <flux:label>Lite des produits</flux:label>
                     </div>
-                    @foreach($s_products as $index => $product)
-                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 mb-2">
-                            <div class="col-span-12 sm:col-span-5">
-                                <flux:select wire:model="s_products.{{ $index }}.product_id" wire:change="s_updateProduct({{ $index }})" required>
-                                    <option value="">Select Product</option>
-                                    @foreach($s_availableProducts as $availableProduct)
-                                        <option value="{{ $availableProduct->id }}">{{ $availableProduct->name }}</option>
-                                    @endforeach
-                                </flux:select>
-                            </div>
-                            <div class="col-span-12 sm:col-span-2">
-                                @php $sel = $s_availableProducts->find($product['product_id'] ?? null); @endphp
-                                <flux:input wire:model="s_products.{{ $index }}.quantity" type="number" min="1" wire:change="s_updateProduct({{ $index }})" @if($sel && $sel->type === 'service') readonly @endif required />
-                                @if($sel && $sel->type === 'service')
-                                    <small class="text-gray-500">-</small>
-                                @endif
-                            </div>
-                            <div class="col-span-12 sm:col-span-3">
-                                <flux:input wire:model="s_products.{{ $index }}.unit_price" type="number" step="0.01" readonly />
-                            </div>
-                            <div class="col-span-12 sm:col-span-2 flex sm:justify-end">
-                                <flux:button type="button" size="sm" wire:click="s_removeProduct({{ $index }})">Supprimer</flux:button>
-                            </div>
+                    <div class="overflow-x-auto">
+                        <flux:table>
+                            <flux:table.columns>
+                                <flux:table.column>Produit</flux:table.column>
+                                <flux:table.column class="w-24">Qté</flux:table.column>
+                                <flux:table.column class="w-32">Prix unitaire</flux:table.column>
+                                <flux:table.column class="w-24"></flux:table.column>
+                            </flux:table.columns>
+                            <flux:table.rows>
+                                @foreach($s_products as $index => $product)
+                                    <flux:table.row wire:key="sp-{{ $index }}">
+                                        <flux:table.cell>
+                                            <flux:select wire:model="s_products.{{ $index }}.product_id" wire:change="s_updateProduct({{ $index }})" required>
+                                                <option value="">Select Product</option>
+                                                @foreach($s_availableProducts as $availableProduct)
+                                                    <option value="{{ $availableProduct->id }}">{{ $availableProduct->name }}</option>
+                                                @endforeach
+                                            </flux:select>
+                                        </flux:table.cell>
+                                        <flux:table.cell>
+                                            @php $sel = $s_availableProducts->find($product['product_id'] ?? null); @endphp
+                                            @if($sel && $sel->type === 'item')
+                                                <flux:input wire:model="s_products.{{ $index }}.quantity" type="number" min="1" wire:change="s_updateProduct({{ $index }})" max="{{ $sel->quantity }}" required />
+                                            @elseif($sel && $sel->type === 'service')
+                                                <span class="text-gray-500">—</span>
+                                            @else
+                                                <span class="text-gray-400">Sélectionnez un produit</span>
+                                            @endif
+                                        </flux:table.cell>
+                                        <flux:table.cell>
+                                            <flux:input wire:model="s_products.{{ $index }}.unit_price" type="number" step="0.01" readonly />
+                                        </flux:table.cell>
+                                        <flux:table.cell>
+                                            <flux:button type="button" size="sm" wire:click="s_removeProduct({{ $index }})">Supprimer</flux:button>
+                                        </flux:table.cell>
+                                    </flux:table.row>
+                                @endforeach
+                            </flux:table.rows>
+                        </flux:table>
+                    </div>
+                    <div class="flex justify-between items-center mt-2">
+                        <flux:button type="button" size="sm" wire:click="s_addProduct">Ajouter produit</flux:button>
+                        <div>
+                            <strong>Total: {{ number_format($s_total_amount, 2) }}</strong>
                         </div>
-                    @endforeach
-                    <div class="text-right mt-2">
-                        <strong>Total: {{ number_format($s_total_amount, 2) }}</strong>
                     </div>
                 </div>
             </div>

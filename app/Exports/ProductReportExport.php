@@ -42,7 +42,6 @@ class ProductReportExport implements FromCollection, WithHeadings, WithMapping, 
             ->map(function ($row) {
                 $product = Product::find($row->product_id);
                 $row->product_name = optional($product)->name;
-                $row->product_sku = optional($product)->sku;
                 return $row;
             });
 
@@ -53,7 +52,6 @@ class ProductReportExport implements FromCollection, WithHeadings, WithMapping, 
     {
         return [
             'Product',
-            'SKU',
             'Total Quantity',
             'Total Revenue',
         ];
@@ -63,7 +61,6 @@ class ProductReportExport implements FromCollection, WithHeadings, WithMapping, 
     {
         return [
             $row->product_name ?? '—',
-            $row->product_sku ?? '',
             (int) $row->total_qty,
             (float) $row->total_revenue,
         ];
@@ -79,7 +76,7 @@ class ProductReportExport implements FromCollection, WithHeadings, WithMapping, 
     public function columnFormats(): array
     {
         return [
-            'D' => NumberFormat::FORMAT_CURRENCY_USD_SIMPLE,
+            'C' => NumberFormat::FORMAT_CURRENCY_USD_SIMPLE,
         ];
     }
 
